@@ -1,0 +1,15 @@
+inp: "mongodb://localhost:27017/test"
+out: "mysql://root:pass@localhost/test"
+tables:
+  infos:
+    index: "bigint(20)"
+    cfg.pub: "varchar(100)"
+    srv: "tinyint(1)"
+  users:
+    type: "varchar(100)"
+    email: "varchar(100)"
+    pubkey: "varchar(100)"
+  regs:
+    type: "varchar(100)"
+    email: "varchar(100)"
+    pubkey: "varchar(100)"
