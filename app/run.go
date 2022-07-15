@@ -116,14 +116,19 @@ func Run() error {
 	if f_mysql.set {
 		Conf.Out = f_mysql.value
 	}
-	u, _ := url.Parse(Conf.Out)
-	if u.User != nil {
-		usr := u.User.Username()
-		u.User = url.User(usr)
+	u_mo, _ := url.Parse(Conf.Inp)
+	if u_mo.User != nil {
+		usr := u_mo.User.Username()
+		u_mo.User = url.User(usr)
+	}
+	u_my, _ := url.Parse(Conf.Out)
+	if u_my.User != nil {
+		usr := u_my.User.Username()
+		u_my.User = url.User(usr)
 	}
 
-	log.Infoln("momyre use mongo:", Conf.Inp)
-	log.Infoln("momyre use mysql:", u.String())
+	log.Infoln("momyre use mongo:", u_mo.String())
+	log.Infoln("momyre use mysql:", u_my.String())
 	log.Infoln("momyre use force:", *f_force)
 
 	log.Infoln("momyre repl tables:", len(Conf.Tables_mo))
