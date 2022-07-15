@@ -61,6 +61,17 @@ func ConnectMo(conn string, timeout time.Duration) (*MongoDB, error) {
 	}
 	mdb.timeout = timeout
 	mdb.opts = options.Client().ApplyURI(conn)
+	u_mo, _ := url.Parse(Conf.Out)
+	if u_mo.User != nil {
+		user := u_mo.User.Username()
+		pass, _ := u_mo.User.Password()
+		cred := options.Credential{
+			AuthMechanism: "SCRAM-SHA-256",
+			Username:      user,
+			Password:      pass,
+		}
+		mdb.opts.SetAuth(cred)
+	}
 	mdb.client, err = mongo.NewClient(mdb.opts)
 	if err != nil {
 		return nil, err
@@ -185,7 +196,7 @@ func (mdb *MongoDB) handleChange(
 
 		// not supported u op
 		data, _ := json.MarshalIndent(ch.O1, "", "  ")
-		log.Errorln("not supported u op", string(data))
+		log.Fatalln("not supported u op", string(data))
 
 		return true, nil // skip
 	}
