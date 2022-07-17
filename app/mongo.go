@@ -196,7 +196,8 @@ func (mdb *MongoDB) handleChange(
 
 		// not supported u op
 		data, _ := json.MarshalIndent(ch.O1, "", "  ")
-		log.Fatalln("not supported u op", string(data))
+		chdata, _ := json.MarshalIndent(ch, "", "  ")
+		log.Fatalln("not supported u op:", string(data), "of ch:", string(chdata))
 
 		return true, nil // skip
 	}
