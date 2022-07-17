@@ -194,7 +194,11 @@ func (mdb *MongoDB) handleChange(
 			return true, nil // done
 		}
 		if _, has := ch.O1["$v"]; has {
-			ver := ch.O1["$v"].(int)
+			ver, is_int := ch.O1["$v"].(int32)
+			if !is_int {
+				log.Fatalln("momyre mongo log u: $v is not int32")
+				return true, nil // skip
+			}
 			if ver == 2 {
 				diff, is_map := ch.O1["diff"].(map[string]interface{})
 				if !is_map {
@@ -219,13 +223,39 @@ func (mdb *MongoDB) handleChange(
 					up_ch <- obj2plain(ops)
 					return true, nil // done
 				}
+				if _, has := diff["sext"]; has {
+					sext, is_map := diff["sext"].(map[string]interface{})
+					if !is_map {
+						log.Fatalln("momyre mongo log u: $v=2, diff.sext is not map")
+						return true, nil // skip
+					}
+					ops, is_map := sext["u"].(map[string]interface{})
+					if !is_map {
+						log.Fatalln("momyre mongo log u: $v=2, diff.sext.u is not map")
+						return true, nil // skip
+					}
+					ops["_id"] = id_obj
+					table := ch.Ns
+					if strings.HasPrefix(table, mdb.dbname+".") {
+						n := len(mdb.dbname) + 1
+						table = table[n:len(table)]
+					}
+					ops["$ns"] = table
+					ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
+					//log.Infoln("ops", ops)
+					up_ch <- obj2plain(ops)
+					return true, nil // done
+				}
+			} else {
+				log.Fatalln("momyre mongo log u: unsupported $v", ver)
+				return true, nil // skip
 			}
+
 		}
 
 		// not supported u op
-		data, _ := json.MarshalIndent(ch.O1, "", "  ")
 		chdata, _ := json.MarshalIndent(ch, "", "  ")
-		log.Fatalln("not supported u op:", string(data), "of ch:", string(chdata))
+		log.Fatalln("not supported u of ch:"+string(chdata))
 
 		return true, nil // skip
 	}
