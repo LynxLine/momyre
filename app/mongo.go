@@ -166,19 +166,19 @@ func (mdb *MongoDB) handleChange(
 
 	if ch.Op == "u" {
 		if _, has := ch.O2["_id"]; !has {
-			log.Infoln("momyre mongo log u: no _id in o2, skip")
+			log.Fatalln("momyre mongo log u: no _id in o2, skip")
 			return true, nil // skip
 		}
 		id_obj, is_oid := ch.O2["_id"].(primitive.ObjectID)
 		if !is_oid {
-			log.Infoln("momyre mongo log u: _id is not ObjectID, skip")
+			log.Fatalln("momyre mongo log u: _id is not ObjectID, skip")
 			return true, nil // skip
 		}
 		// $set
 		if _, has := ch.O1["$set"]; has {
 			ops, is_map := ch.O1["$set"].(map[string]interface{})
 			if !is_map {
-				log.Infoln("momyre mongo log u: $set is not map")
+				log.Fatalln("momyre mongo log u: $set is not map")
 				return true, nil // skip
 			}
 			ops["_id"] = id_obj
@@ -192,6 +192,34 @@ func (mdb *MongoDB) handleChange(
 			//log.Infoln("ops", ops)
 			up_ch <- obj2plain(ops)
 			return true, nil // done
+		}
+		if _, has := ch.O1["$v"]; has {
+			ver := ch.O1["$v"].(int)
+			if ver == 2 {
+				diff, is_map := ch.O1["diff"].(map[string]interface{})
+				if !is_map {
+					log.Fatalln("momyre mongo log u: $v=2, diff is not map")
+					return true, nil // skip
+				}
+				if _, has := diff["u"]; has {
+					ops, is_map := diff["u"].(map[string]interface{})
+					if !is_map {
+						log.Fatalln("momyre mongo log u: $v=2, diff.u is not map")
+						return true, nil // skip
+					}
+					ops["_id"] = id_obj
+					table := ch.Ns
+					if strings.HasPrefix(table, mdb.dbname+".") {
+						n := len(mdb.dbname) + 1
+						table = table[n:len(table)]
+					}
+					ops["$ns"] = table
+					ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
+					//log.Infoln("ops", ops)
+					up_ch <- obj2plain(ops)
+					return true, nil // done
+				}
+			}
 		}
 
 		// not supported u op
