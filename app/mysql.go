@@ -25,6 +25,7 @@ package app
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -308,7 +309,6 @@ func (mdb *MysqlDB) appendRow(
 	table string,
 	obj map[string]interface{}) error {
 
-	// todo cols with "."
 	cols := make([]string, 0, len(Conf.Tables_my[table])+1)
 	cols = append(cols, "_id")
 	for name, _ := range Conf.Tables_my[table] {
@@ -319,17 +319,21 @@ func (mdb *MysqlDB) appendRow(
 	q_vs := ""
 	vals := make([]interface{}, 0, len(obj))
 	for _, name := range cols {
-		vali := obj[name]
-		switch val := vali.(type) {
-		case primitive.ObjectID:
-			vali = val.Hex()
-		}
 		if len(q_ns) > 0 {
 			q_ns += ","
 			q_vs += ","
 		}
 		q_ns += "`" + name + "`"
 		q_vs += "?"
+		//now value
+		vali := obj[name]
+		switch val := vali.(type) {
+		case primitive.ObjectID:
+			vali = val.Hex()
+		case primitive.A:
+			bytes, _ := json.Marshal(val)
+			vali = string(bytes)
+		}
 		vals = append(vals, vali)
 	}
 	sql := "INSERT INTO " + table + " (" + q_ns + ") VALUES (" + q_vs + ")"
@@ -386,6 +390,9 @@ func (mdb *MysqlDB) updateRow(
 		switch val := vali.(type) {
 		case primitive.ObjectID:
 			vali = val.Hex()
+		case primitive.A:
+			bytes, _ := json.Marshal(val)
+			vali = string(bytes)
 		}
 		if len(q_ns) > 0 {
 			q_ns += ","
