@@ -29,6 +29,42 @@ PC: linux/amd64:
 docker pull yshurik/momyre:latest
 ```
 
+# Examples of mapping data
+
+``` yaml
+  emails:
+    from: "varchar(100)"
+    rcpt: "varchar(100)"
+    subj: "varchar(100)"
+    body: "blob"
+```
+
+Can also map arrays into blobs as json:
+
+``` yaml
+  emails:
+    from: "varchar(100)"
+    rcpts: "blob"
+    subj: "varchar(100)"
+    body: "blob"
+```
+In last case if you have an mongo object with multiple recipients like:
+``` json
+{
+  "from" : "test@test.com",
+  "rcpts" : [
+    "test1@test.com",
+    "test2@test.com"
+  ],
+  "subj" : "test",
+  "body" : "test"
+}
+```
+Then mysql/mariadb column "rcpts" will have blob with json 
+``` json
+[ "test1@test.com", "test2@test.com" ]
+```
+
 # Running momyre docker container
 
 The docker container can be started with appropriate config mappings.
