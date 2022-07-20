@@ -2,9 +2,9 @@
 
 What is it?
 
-## MOngo to MYsql simple REplicator
+# MOngo to MYsql simple REplicator
 
-# Intro
+## Intro
 
 The repository is missing link to run replication process from the mongo cluster to the mysql databse
 
@@ -16,20 +16,34 @@ Also note Momyre is a work in progress and currently has some limitations.
 The docker image is compact (~20MB) alpine-based, can run on Linux / Mac / Windows with
 appropriate setup of Mongo custer and MySQL databse
 
-# Disclaimer
+## Disclaimer
 
 I am not a database expert and I don't know whether Momyre is actually perfectly safe for 
 replication. I wouldn't recommend using for anything highly sensitive until you 
 proof it fill your needs with appropriate restrictions.
 
-# Download the software
+## Download the software
 
 PC: linux/amd64:
 ```bash
 docker pull yshurik/momyre:latest
 ```
 
-# Examples of mapping data
+## Run stages
+
+First momyre gets list of exisiting tables and compare with list of mappings.
+
+If there are extra tables it will create them.
+
+Also momyre gets list of columns in tables and compare with list of mappings.
+
+If there are extra columns it will create them.
+
+If some table/column is not present in mappings, momyre wil want to remove it.
+
+To have it removed the momyre needs to run with ```--force``` options
+
+## Examples of mapping data
 
 ``` yaml
   emails:
@@ -65,7 +79,7 @@ Then mysql/mariadb column "rcpts" will have blob with json
 [ "test1@test.com", "test2@test.com" ]
 ```
 
-# Running momyre docker container
+## Running momyre docker container
 
 The docker container can be started with appropriate config mappings.
 
