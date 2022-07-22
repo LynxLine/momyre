@@ -246,6 +246,29 @@ func (mdb *MongoDB) handleChange(
 					up_ch <- obj2plain(ops)
 					return true, nil // done
 				}
+				if _, has := diff["stime"]; has {
+					stime, is_map := diff["stime"].(map[string]interface{})
+					if !is_map {
+						log.Fatalln("momyre mongo log u: $v=2, diff.stime is not map")
+						return true, nil // skip
+					}
+					ops, is_map := stime["u"].(map[string]interface{})
+					if !is_map {
+						log.Fatalln("momyre mongo log u: $v=2, diff.stime.u is not map")
+						return true, nil // skip
+					}
+					ops["_id"] = id_obj
+					table := ch.Ns
+					if strings.HasPrefix(table, mdb.dbname+".") {
+						n := len(mdb.dbname) + 1
+						table = table[n:len(table)]
+					}
+					ops["$ns"] = table
+					ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
+					//log.Infoln("ops", ops)
+					up_ch <- obj2plain(ops)
+					return true, nil // done
+				}
 			} else {
 				log.Fatalln("momyre mongo log u: unsupported $v", ver)
 				return true, nil // skip
@@ -255,7 +278,7 @@ func (mdb *MongoDB) handleChange(
 
 		// not supported u op
 		chdata, _ := json.MarshalIndent(ch, "", "  ")
-		log.Fatalln("not supported u of ch:"+string(chdata))
+		log.Fatalln("not supported u of ch:" + string(chdata))
 
 		return true, nil // skip
 	}
