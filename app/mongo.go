@@ -93,12 +93,13 @@ func (mdb *MongoDB) Run(
 
 	ns []string,
 	timestamp uint64,
+	tx_ch chan<- string,
 	in_ch chan<- map[string]interface{},
 	up_ch chan<- map[string]interface{},
 	de_ch chan<- map[string]interface{}) error {
 
 	for {
-		err := mdb.readLogs(ns, timestamp, in_ch, up_ch, de_ch)
+		err := mdb.readLogs(ns, timestamp, tx_ch, in_ch, up_ch, de_ch)
 		if err != nil {
 			return err
 		}
@@ -145,6 +146,7 @@ func (mdb *MongoDB) handleChange(
 	ch *OpLog,
 	cur *mongo.Cursor,
 	ns_map map[string]bool,
+	tx_ch chan<- string,
 	in_ch chan<- map[string]interface{},
 	up_ch chan<- map[string]interface{},
 	de_ch chan<- map[string]interface{}) (bool, error) {
@@ -319,6 +321,8 @@ func (mdb *MongoDB) handleChange(
 			return false, err
 		}
 
+		tx_ch <- "start"
+
 		for _, ch1 := range tx.O1.Ops {
 			_, has := ns_map[ch1.Ns]
 			if !has {
@@ -328,11 +332,15 @@ func (mdb *MongoDB) handleChange(
 			_, err := mdb.handleChange(
 				&ch1, cur,
 				ns_map,
-				in_ch, up_ch, de_ch)
+				tx_ch, in_ch, up_ch, de_ch)
 			if err != nil {
 				log.Errorln("momyre mongo tx err", err)
+				tx_ch <- "rollback"
+				return false, err
 			}
 		}
+
+		tx_ch <- "commit"
 
 		return true, nil // done
 	}
@@ -344,6 +352,7 @@ func (mdb *MongoDB) readLogs(
 
 	tables []string,
 	timestamp uint64,
+	tx_ch chan<- string,
 	in_ch chan<- map[string]interface{},
 	up_ch chan<- map[string]interface{},
 	de_ch chan<- map[string]interface{}) error {
@@ -401,7 +410,7 @@ func (mdb *MongoDB) readLogs(
 			return err
 		}
 
-		done, err := mdb.handleChange(&ch, cur, ns_map, in_ch, up_ch, de_ch)
+		done, err := mdb.handleChange(&ch, cur, ns_map, tx_ch, in_ch, up_ch, de_ch)
 		if done {
 			continue
 		}

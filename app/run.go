@@ -238,21 +238,34 @@ func Run() error {
 
 	// to run replication
 
+	tx_ch := make(chan string, 100)
 	in_ch := make(chan map[string]interface{}, 100)
 	up_ch := make(chan map[string]interface{}, 100)
 	de_ch := make(chan map[string]interface{}, 100)
 
 	go func(
+		tx_ch <-chan string,
 		in_ch <-chan map[string]interface{},
 		up_ch <-chan map[string]interface{},
 		de_ch <-chan map[string]interface{}) {
 
+		tx_ok := true
 		in_ok := true
 		up_ok := true
 		de_ok := true
-		for in_ok || up_ok || de_ok {
+		for tx_ok || in_ok || up_ok || de_ok {
 
 			select {
+			case cmd, opened := <-tx_ch:
+				if !opened {
+					tx_ok = false
+					break
+				}
+				err := mydb.txcmd(cmd)
+				if err != nil {
+					log.Errorln("momyre mysql tx cmd:", err)
+					continue
+				}
 			case obj, opened := <-in_ch:
 				if !opened {
 					in_ok = false
@@ -301,14 +314,14 @@ func Run() error {
 
 		log.Warnln("momyre replication mysql loop finished...")
 
-	}(in_ch, up_ch, de_ch)
+	}(tx_ch, in_ch, up_ch, de_ch)
 
 	log.Warnln("momyre replication about to start...")
 	tables := make([]string, 0, len(Conf.Tables_mo))
 	for table, _ := range Conf.Tables_mo {
 		tables = append(tables, table)
 	}
-	err = modb.Run(tables, mydb.Timestamp, in_ch, up_ch, de_ch)
+	err = modb.Run(tables, mydb.Timestamp, tx_ch, in_ch, up_ch, de_ch)
 	if err != nil {
 		return err
 	}

@@ -43,6 +43,7 @@ type MysqlDB struct {
 	timeout   time.Duration
 	client    *sql.DB
 	Timestamp uint64
+	Txlvl     int
 }
 
 type ConfRec struct {
@@ -285,6 +286,28 @@ CREATE TABLE $name (
 		// preserve right order of columns
 	}
 	return resync_columns, nil
+}
+
+func (mdb *MysqlDB) txcmd(cmd string) error {
+	if cmd == "start" {
+		mdb.Txlvl += 1
+		if mdb.Txlvl == 1 {
+			mdb.client.Exec("START TRANSACTION")
+		}
+	}
+	if cmd == "commit" {
+		if mdb.Txlvl == 1 {
+			mdb.client.Exec("COMMIT")
+		}
+		mdb.Txlvl -= 1
+	}
+	if cmd == "rollback" {
+		if mdb.Txlvl == 1 {
+			mdb.client.Exec("ROLLBACK")
+		}
+		mdb.Txlvl -= 1
+	}
+	return nil
 }
 
 func (mdb *MysqlDB) upsertRow(
