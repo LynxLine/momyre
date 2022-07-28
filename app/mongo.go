@@ -46,6 +46,15 @@ type MongoDB struct {
 	opts    *options.ClientOptions
 }
 
+type Op struct {
+	cmd string
+	arg map[string]interface{}
+}
+
+type Ops struct {
+	ops []Op
+}
+
 func ConnectMo(conn string, timeout time.Duration) (*MongoDB, error) {
 	u, err := url.Parse(conn)
 	if err != nil {
@@ -93,13 +102,10 @@ func (mdb *MongoDB) Run(
 
 	ns []string,
 	timestamp uint64,
-	tx_ch chan<- string,
-	in_ch chan<- map[string]interface{},
-	up_ch chan<- map[string]interface{},
-	de_ch chan<- map[string]interface{}) error {
+	op_ch chan<- Ops) error {
 
 	for {
-		err := mdb.readLogs(ns, timestamp, tx_ch, in_ch, up_ch, de_ch)
+		err := mdb.readLogs(ns, timestamp, op_ch)
 		if err != nil {
 			return err
 		}
@@ -146,10 +152,7 @@ func (mdb *MongoDB) handleChange(
 	ch *OpLog,
 	cur *mongo.Cursor,
 	ns_map map[string]bool,
-	tx_ch chan<- string,
-	in_ch chan<- map[string]interface{},
-	up_ch chan<- map[string]interface{},
-	de_ch chan<- map[string]interface{}) (bool, error) {
+	changes *Ops) (bool, error) {
 
 	if ch.Op == "i" {
 		ops := ch.O1
@@ -161,8 +164,11 @@ func (mdb *MongoDB) handleChange(
 		ops["$ns"] = table
 		ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
 
-		in_ch <- obj2plain(ops)
-
+		op := Op{
+			cmd: "insert",
+			arg: obj2plain(ops),
+		}
+		changes.ops = append(changes.ops, op)
 		return true, nil
 	}
 
@@ -191,8 +197,11 @@ func (mdb *MongoDB) handleChange(
 			}
 			ops["$ns"] = table
 			ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
-			//log.Infoln("ops", ops)
-			up_ch <- obj2plain(ops)
+			op := Op{
+				cmd: "update",
+				arg: obj2plain(ops),
+			}
+			changes.ops = append(changes.ops, op)
 			return true, nil // done
 		}
 		if _, has := ch.O1["$v"]; has {
@@ -221,8 +230,11 @@ func (mdb *MongoDB) handleChange(
 					}
 					ops["$ns"] = table
 					ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
-					//log.Infoln("ops", ops)
-					up_ch <- obj2plain(ops)
+					op := Op{
+						cmd: "update",
+						arg: obj2plain(ops),
+					}
+					changes.ops = append(changes.ops, op)
 					return true, nil // done
 				}
 				if _, has := diff["sext"]; has {
@@ -244,8 +256,11 @@ func (mdb *MongoDB) handleChange(
 					}
 					ops["$ns"] = table
 					ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
-					//log.Infoln("ops", ops)
-					up_ch <- obj2plain(ops)
+					op := Op{
+						cmd: "update",
+						arg: obj2plain(ops),
+					}
+					changes.ops = append(changes.ops, op)
 					return true, nil // done
 				}
 				if _, has := diff["stime"]; has {
@@ -267,8 +282,11 @@ func (mdb *MongoDB) handleChange(
 					}
 					ops["$ns"] = table
 					ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
-					//log.Infoln("ops", ops)
-					up_ch <- obj2plain(ops)
+					op := Op{
+						cmd: "update",
+						arg: obj2plain(ops),
+					}
+					changes.ops = append(changes.ops, op)
 					return true, nil // done
 				}
 			} else {
@@ -304,7 +322,11 @@ func (mdb *MongoDB) handleChange(
 		}
 		ops["$ns"] = table
 		ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
-		de_ch <- ops
+		op := Op{
+			cmd: "delete",
+			arg: ops,
+		}
+		changes.ops = append(changes.ops, op)
 		return true, nil // done
 	}
 
@@ -321,8 +343,6 @@ func (mdb *MongoDB) handleChange(
 			return false, err
 		}
 
-		tx_ch <- "start"
-
 		for _, ch1 := range tx.O1.Ops {
 			_, has := ns_map[ch1.Ns]
 			if !has {
@@ -332,15 +352,12 @@ func (mdb *MongoDB) handleChange(
 			_, err := mdb.handleChange(
 				&ch1, cur,
 				ns_map,
-				tx_ch, in_ch, up_ch, de_ch)
+				changes)
 			if err != nil {
 				log.Errorln("momyre mongo tx err", err)
-				tx_ch <- "rollback"
 				return false, err
 			}
 		}
-
-		tx_ch <- "commit"
 
 		return true, nil // done
 	}
@@ -352,10 +369,7 @@ func (mdb *MongoDB) readLogs(
 
 	tables []string,
 	timestamp uint64,
-	tx_ch chan<- string,
-	in_ch chan<- map[string]interface{},
-	up_ch chan<- map[string]interface{},
-	de_ch chan<- map[string]interface{}) error {
+	op_ch chan<- Ops) error {
 
 	q := bson.D{}
 	ns_map := make(map[string]bool)
@@ -410,7 +424,13 @@ func (mdb *MongoDB) readLogs(
 			return err
 		}
 
-		done, err := mdb.handleChange(&ch, cur, ns_map, tx_ch, in_ch, up_ch, de_ch)
+		ops := new(Ops)
+		ops.ops = make([]Op, 0)
+
+		done, err := mdb.handleChange(&ch, cur, ns_map, ops)
+		if err == nil {
+			op_ch <- *ops
+		}
 		if done {
 			continue
 		}

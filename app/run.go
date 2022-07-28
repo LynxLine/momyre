@@ -214,7 +214,15 @@ func Run() error {
 				if !opened {
 					break
 				}
-				err := mydb.upsertRow(table, obj)
+				tx, err := mydb.client.Begin()
+				if err != nil {
+					return err
+				}
+				err = mydb.upsertRow(tx, table, obj)
+				if err != nil {
+					return err
+				}
+				err = tx.Commit()
 				if err != nil {
 					return err
 				}
@@ -238,75 +246,22 @@ func Run() error {
 
 	// to run replication
 
-	tx_ch := make(chan string, 100)
-	in_ch := make(chan map[string]interface{}, 100)
-	up_ch := make(chan map[string]interface{}, 100)
-	de_ch := make(chan map[string]interface{}, 100)
+	op_ch := make(chan Ops, 100)
 
-	go func(
-		tx_ch <-chan string,
-		in_ch <-chan map[string]interface{},
-		up_ch <-chan map[string]interface{},
-		de_ch <-chan map[string]interface{}) {
+	go func(op_ch <-chan Ops) {
 
-		tx_ok := true
-		in_ok := true
-		up_ok := true
-		de_ok := true
-		for tx_ok || in_ok || up_ok || de_ok {
+		op_ok := true
+		for op_ok {
 
 			select {
-			case cmd, opened := <-tx_ch:
+			case ops, opened := <-op_ch:
 				if !opened {
-					tx_ok = false
+					op_ok = false
 					break
 				}
-				err := mydb.txcmd(cmd)
+				err := mydb.processOps(ops)
 				if err != nil {
-					log.Errorln("momyre mysql tx cmd:", err)
-					continue
-				}
-			case obj, opened := <-in_ch:
-				if !opened {
-					in_ok = false
-					break
-				}
-				table, _ := obj["$ns"].(string)
-				err := mydb.upsertRow(table, obj)
-				if err != nil {
-					log.Errorln("momyre mysql insert row:", err)
-					continue
-				}
-			case obj, opened := <-up_ch:
-				if !opened {
-					up_ok = false
-					break
-				}
-				table, _ := obj["$ns"].(string)
-				err := mydb.updateRow(table, obj)
-				if err != nil {
-					log.Errorln("momyre mysql update row:", err)
-					continue
-				}
-			case obj, opened := <-de_ch:
-				if !opened {
-					de_ok = false
-					break
-				}
-				table, _ := obj["$ns"].(string)
-				idhex, _ := obj["_id"].(string)
-				tsnum := uint64(0)
-				if ts, has := obj["$ts"]; has {
-					tsnum_tmp, is_uint64 := ts.(uint64)
-					if is_uint64 {
-						tsnum = tsnum_tmp
-					} else {
-						log.Infoln("momyre mysql $ts has wrong type")
-					}
-				}
-				err := mydb.deleteRow(table, idhex, tsnum)
-				if err != nil {
-					log.Errorln("momyre mysql delete row:", err)
+					log.Errorln("momyre mysql ops:", err)
 					continue
 				}
 			}
@@ -314,14 +269,14 @@ func Run() error {
 
 		log.Warnln("momyre replication mysql loop finished...")
 
-	}(tx_ch, in_ch, up_ch, de_ch)
+	}(op_ch)
 
 	log.Warnln("momyre replication about to start...")
 	tables := make([]string, 0, len(Conf.Tables_mo))
 	for table, _ := range Conf.Tables_mo {
 		tables = append(tables, table)
 	}
-	err = modb.Run(tables, mydb.Timestamp, tx_ch, in_ch, up_ch, de_ch)
+	err = modb.Run(tables, mydb.Timestamp, op_ch)
 	if err != nil {
 		return err
 	}

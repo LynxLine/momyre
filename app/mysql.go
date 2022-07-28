@@ -288,34 +288,77 @@ CREATE TABLE $name (
 	return resync_columns, nil
 }
 
-func (mdb *MysqlDB) txcmd(cmd string) error {
-	log.Warnln("momyre mysql txcmd", cmd, mdb.Txlvl)
-	if cmd == "start" {
-		mdb.Txlvl += 1
-		if mdb.Txlvl == 1 {
-			mdb.client.Exec("START TRANSACTION")
-		}
+func (mdb *MysqlDB) processOps(ops Ops) error {
+	if len(ops.ops) == 0 {
+		return nil // nothing todo
 	}
-	if cmd == "commit" {
-		if mdb.Txlvl == 1 {
-			mdb.client.Exec("COMMIT")
-		}
-		mdb.Txlvl -= 1
+
+	tx, err := mdb.client.Begin()
+	if err != nil {
+		log.Fatalln("momyre mysql begin tx:", err)
 	}
-	if cmd == "rollback" {
-		if mdb.Txlvl == 1 {
-			mdb.client.Exec("ROLLBACK")
+
+	err = mdb.processTxOps(tx, ops)
+	if err != nil {
+		tx.Rollback()
+		log.Fatalln("momyre mysql process tx:", err)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		log.Fatalln("momyre mysql commit tx:", err)
+	}
+
+	return nil
+}
+
+func (mdb *MysqlDB) processTxOps(tx *sql.Tx, ops Ops) error {
+	for _, op := range ops.ops {
+
+		if op.cmd == "insert" {
+			table, _ := op.arg["$ns"].(string)
+			err := mdb.upsertRow(tx, table, op.arg)
+			if err != nil {
+				return fmt.Errorf("momyre mysql insert row: %+v", err)
+			}
+
+		} else if op.cmd == "update" {
+			table, _ := op.arg["$ns"].(string)
+			err := mdb.updateRow(tx, table, op.arg)
+			if err != nil {
+				return fmt.Errorf("momyre mysql update row: %+v", err)
+			}
+
+		} else if op.cmd == "delete" {
+			table, _ := op.arg["$ns"].(string)
+			idhex, _ := op.arg["_id"].(string)
+			tsnum := uint64(0)
+			if ts, has := op.arg["$ts"]; has {
+				tsnum_tmp, is_uint64 := ts.(uint64)
+				if is_uint64 {
+					tsnum = tsnum_tmp
+				} else {
+					return fmt.Errorf("momyre mysql $ts has wrong type")
+				}
+			}
+			err := mdb.deleteRow(tx, table, idhex, tsnum)
+			if err != nil {
+				return fmt.Errorf("momyre mysql delete row: %+v", err)
+			}
+
+		} else {
+			return fmt.Errorf("momyre mysql unknown op: %+v", op.cmd)
 		}
-		mdb.Txlvl -= 1
 	}
 	return nil
 }
 
 func (mdb *MysqlDB) upsertRow(
+	tx *sql.Tx,
 	table string,
 	obj map[string]interface{}) error {
 
-	err := mdb.appendRow(table, obj)
+	err := mdb.appendRow(tx, table, obj)
 	if err != nil {
 		me, ok := err.(*mysql.MySQLError)
 		if !ok {
@@ -324,12 +367,13 @@ func (mdb *MysqlDB) upsertRow(
 		if me.Number != 1062 { // not duplicate entry
 			return err
 		}
-		return mdb.updateRow(table, obj)
+		return mdb.updateRow(tx, table, obj)
 	}
 	return nil
 }
 
 func (mdb *MysqlDB) appendRow(
+	tx *sql.Tx,
 	table string,
 	obj map[string]interface{}) error {
 
@@ -362,10 +406,11 @@ func (mdb *MysqlDB) appendRow(
 	}
 	sql := "INSERT INTO " + table + " (" + q_ns + ") VALUES (" + q_vs + ")"
 	log.Debugln("sql", sql)
-	q, err := mdb.client.Prepare(sql)
+	q, err := tx.Prepare(sql)
 	if err != nil {
 		return err
 	}
+	defer q.Close()
 	_, err = q.Exec(vals...)
 	if err != nil {
 		return err
@@ -373,7 +418,7 @@ func (mdb *MysqlDB) appendRow(
 	if ts, has := obj["$ts"]; has {
 		tsnum, is_uint64 := ts.(uint64)
 		if is_uint64 {
-			err = mdb.updateTimestamp(tsnum)
+			err = mdb.updateTimestampInTx(tx, tsnum)
 			if err != nil {
 				return err
 			}
@@ -385,6 +430,7 @@ func (mdb *MysqlDB) appendRow(
 }
 
 func (mdb *MysqlDB) updateRow(
+	tx *sql.Tx,
 	table string,
 	obj map[string]interface{}) error {
 
@@ -431,10 +477,11 @@ func (mdb *MysqlDB) updateRow(
 
 	sql := "UPDATE " + table + " SET " + q_ns + " WHERE _id=?"
 	log.Debugln("sql", sql)
-	q, err := mdb.client.Prepare(sql)
+	q, err := tx.Prepare(sql)
 	if err != nil {
 		return err
 	}
+	defer q.Close()
 	_, err = q.Exec(vals...)
 	if err != nil {
 		return err
@@ -442,7 +489,7 @@ func (mdb *MysqlDB) updateRow(
 	if ts, has := obj["$ts"]; has {
 		tsnum, is_uint64 := ts.(uint64)
 		if is_uint64 {
-			err = mdb.updateTimestamp(tsnum)
+			err = mdb.updateTimestampInTx(tx, tsnum)
 			if err != nil {
 				return err
 			}
@@ -454,7 +501,9 @@ func (mdb *MysqlDB) updateRow(
 }
 
 func (mdb *MysqlDB) deleteRow(
-	table, idhex string, tsnum uint64) error {
+	tx *sql.Tx,
+	table, idhex string,
+	tsnum uint64) error {
 
 	if _, has := Conf.Tables_my[table]; !has {
 		return nil // skip
@@ -462,16 +511,17 @@ func (mdb *MysqlDB) deleteRow(
 
 	sql := "DELETE FROM " + table + " WHERE _id=?"
 	log.Debugln("sql", sql)
-	q, err := mdb.client.Prepare(sql)
+	q, err := tx.Prepare(sql)
 	if err != nil {
 		return err
 	}
+	defer q.Close()
 	_, err = q.Exec(idhex)
 	if err != nil {
 		return err
 	}
 	if tsnum > 0 {
-		err = mdb.updateTimestamp(tsnum)
+		err = mdb.updateTimestampInTx(tx, tsnum)
 		if err != nil {
 			return err
 		}
@@ -482,20 +532,53 @@ func (mdb *MysqlDB) deleteRow(
 func (mdb *MysqlDB) updateTimestamp(tsnum uint64) error {
 
 	sql := "INSERT INTO momyre (name,value) VALUES (?,?)"
-	_, err := mdb.client.Query(sql, "timestamp", strconv.FormatUint(tsnum, 10))
-	if err != nil {
-		me, ok := err.(*mysql.MySQLError)
-		if !ok {
-			return err
-		}
-		if me.Number != 1062 { // not duplicate entry
-			return err
-		}
-
-		sql := "UPDATE momyre SET value=? WHERE name=?"
-		_, err := mdb.client.Query(sql, strconv.FormatUint(tsnum, 10), "timestamp")
+	res, err := mdb.client.Query(sql, "timestamp", strconv.FormatUint(tsnum, 10))
+	if err == nil {
+		defer res.Close()
+		mdb.Timestamp = tsnum
+		return nil
+	}
+	me, ok := err.(*mysql.MySQLError)
+	if !ok {
 		return err
 	}
+	if me.Number != 1062 { // not duplicate entry
+		return err
+	}
+
+	sql = "UPDATE momyre SET value=? WHERE name=?"
+	res, err = mdb.client.Query(sql, strconv.FormatUint(tsnum, 10), "timestamp")
+	if err != nil {
+		return err
+	}
+	defer res.Close()
+	mdb.Timestamp = tsnum
+	return nil
+}
+
+func (mdb *MysqlDB) updateTimestampInTx(tx *sql.Tx, tsnum uint64) error {
+
+	sql := "INSERT INTO momyre (name,value) VALUES (?,?)"
+	res, err := tx.Query(sql, "timestamp", strconv.FormatUint(tsnum, 10))
+	if err == nil {
+		defer res.Close()
+		mdb.Timestamp = tsnum
+		return nil
+	}
+	me, ok := err.(*mysql.MySQLError)
+	if !ok {
+		return err
+	}
+	if me.Number != 1062 { // not duplicate entry
+		return err
+	}
+
+	sql = "UPDATE momyre SET value=? WHERE name=?"
+	res, err = tx.Query(sql, strconv.FormatUint(tsnum, 10), "timestamp")
+	if err != nil {
+		return err
+	}
+	defer res.Close()
 	mdb.Timestamp = tsnum
 	return nil
 }
