@@ -289,6 +289,7 @@ CREATE TABLE $name (
 }
 
 func (mdb *MysqlDB) txcmd(cmd string) error {
+	log.Warnln("momyre mysql txcmd", cmd, mdb.Txlvl)
 	if cmd == "start" {
 		mdb.Txlvl += 1
 		if mdb.Txlvl == 1 {
