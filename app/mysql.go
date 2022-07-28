@@ -481,11 +481,7 @@ func (mdb *MysqlDB) deleteRow(
 func (mdb *MysqlDB) updateTimestamp(tsnum uint64) error {
 
 	sql := "INSERT INTO momyre (name,value) VALUES (?,?)"
-	q, err := mdb.client.Prepare(sql)
-	if err != nil {
-		return err
-	}
-	_, err = q.Exec("timestamp", strconv.FormatUint(tsnum, 10))
+	_, err := mdb.client.Query(sql, "timestamp", strconv.FormatUint(tsnum, 10))
 	if err != nil {
 		me, ok := err.(*mysql.MySQLError)
 		if !ok {
@@ -496,11 +492,7 @@ func (mdb *MysqlDB) updateTimestamp(tsnum uint64) error {
 		}
 
 		sql := "UPDATE momyre SET value=? WHERE name=?"
-		q, err := mdb.client.Prepare(sql)
-		if err != nil {
-			return err
-		}
-		_, err = q.Exec(strconv.FormatUint(tsnum, 10), "timestamp")
+		_, err := mdb.client.Query(sql, strconv.FormatUint(tsnum, 10), "timestamp")
 		return err
 	}
 	mdb.Timestamp = tsnum
