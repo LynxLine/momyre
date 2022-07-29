@@ -216,6 +216,27 @@ func (mdb *MongoDB) handleChange(
 					log.Fatalln("momyre mongo log u: $v=2, diff is not map")
 					return true, nil // skip
 				}
+				if _, has := diff["i"]; has {
+					ops, is_map := diff["i"].(map[string]interface{})
+					if !is_map {
+						log.Fatalln("momyre mongo log i: $v=2, diff.i is not map")
+						return true, nil // skip
+					}
+					ops["_id"] = id_obj
+					table := ch.Ns
+					if strings.HasPrefix(table, mdb.dbname+".") {
+						n := len(mdb.dbname) + 1
+						table = table[n:len(table)]
+					}
+					ops["$ns"] = table
+					ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
+					op := Op{
+						cmd: "update",
+						arg: obj2plain(ops),
+					}
+					changes.ops = append(changes.ops, op)
+					return true, nil // done
+				}
 				if _, has := diff["u"]; has {
 					ops, is_map := diff["u"].(map[string]interface{})
 					if !is_map {
