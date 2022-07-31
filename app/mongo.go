@@ -216,105 +216,81 @@ func (mdb *MongoDB) handleChange(
 					log.Fatalln("momyre mongo log u: $v=2, diff is not map")
 					return true, nil // skip
 				}
-				if _, has := diff["i"]; has {
-					ops, is_map := diff["i"].(map[string]interface{})
-					if !is_map {
-						log.Fatalln("momyre mongo log i: $v=2, diff.i is not map")
-						return true, nil // skip
+				for diff_key, _ := range diff {
+					if diff_key == "i" {
+						ops, is_map := diff["i"].(map[string]interface{})
+						if !is_map {
+							log.Fatalln("momyre mongo log i: $v=2, diff.i is not map")
+							return true, nil // skip
+						}
+						ops["_id"] = id_obj
+						table := ch.Ns
+						if strings.HasPrefix(table, mdb.dbname+".") {
+							n := len(mdb.dbname) + 1
+							table = table[n:len(table)]
+						}
+						ops["$ns"] = table
+						ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
+						op := Op{
+							cmd: "update",
+							arg: obj2plain(ops),
+						}
+						changes.ops = append(changes.ops, op)
+					} else if diff_key == "u" {
+						ops, is_map := diff["u"].(map[string]interface{})
+						if !is_map {
+							log.Fatalln("momyre mongo log u: $v=2, diff.u is not map")
+							return true, nil // skip
+						}
+						ops["_id"] = id_obj
+						table := ch.Ns
+						if strings.HasPrefix(table, mdb.dbname+".") {
+							n := len(mdb.dbname) + 1
+							table = table[n:len(table)]
+						}
+						ops["$ns"] = table
+						ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
+						op := Op{
+							cmd: "update",
+							arg: obj2plain(ops),
+						}
+						changes.ops = append(changes.ops, op)
+					} else if strings.HasPrefix(diff_key, "s") {
+						subname := diff_key[1:]
+						submap, is_map := diff[diff_key].(map[string]interface{})
+						if !is_map {
+							log.Fatalln("momyre mongo log u: $v=2, diff." + diff_key + " is not map")
+							return true, nil // skip
+						}
+						subops, is_map := submap["u"].(map[string]interface{})
+						if !is_map {
+							log.Fatalln("momyre mongo log u: $v=2, diff." + diff_key + ".u is not map")
+							return true, nil // skip
+						}
+						ops := make(map[string]interface{})
+						ops[subname] = subops
+						ops["_id"] = id_obj
+						table := ch.Ns
+						if strings.HasPrefix(table, mdb.dbname+".") {
+							n := len(mdb.dbname) + 1
+							table = table[n:len(table)]
+						}
+						ops["$ns"] = table
+						ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
+						op := Op{
+							cmd: "update",
+							arg: obj2plain(ops),
+						}
+						changes.ops = append(changes.ops, op)
+					} else {
+						log.Fatalln("momyre mongo log i: $v=2, diff." + diff_key + " unknown")
 					}
-					ops["_id"] = id_obj
-					table := ch.Ns
-					if strings.HasPrefix(table, mdb.dbname+".") {
-						n := len(mdb.dbname) + 1
-						table = table[n:len(table)]
-					}
-					ops["$ns"] = table
-					ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
-					op := Op{
-						cmd: "update",
-						arg: obj2plain(ops),
-					}
-					changes.ops = append(changes.ops, op)
-					return true, nil // done
 				}
-				if _, has := diff["u"]; has {
-					ops, is_map := diff["u"].(map[string]interface{})
-					if !is_map {
-						log.Fatalln("momyre mongo log u: $v=2, diff.u is not map")
-						return true, nil // skip
-					}
-					ops["_id"] = id_obj
-					table := ch.Ns
-					if strings.HasPrefix(table, mdb.dbname+".") {
-						n := len(mdb.dbname) + 1
-						table = table[n:len(table)]
-					}
-					ops["$ns"] = table
-					ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
-					op := Op{
-						cmd: "update",
-						arg: obj2plain(ops),
-					}
-					changes.ops = append(changes.ops, op)
-					return true, nil // done
-				}
-				if _, has := diff["sext"]; has {
-					sext, is_map := diff["sext"].(map[string]interface{})
-					if !is_map {
-						log.Fatalln("momyre mongo log u: $v=2, diff.sext is not map")
-						return true, nil // skip
-					}
-					ops, is_map := sext["u"].(map[string]interface{})
-					if !is_map {
-						log.Fatalln("momyre mongo log u: $v=2, diff.sext.u is not map")
-						return true, nil // skip
-					}
-					ops["_id"] = id_obj
-					table := ch.Ns
-					if strings.HasPrefix(table, mdb.dbname+".") {
-						n := len(mdb.dbname) + 1
-						table = table[n:len(table)]
-					}
-					ops["$ns"] = table
-					ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
-					op := Op{
-						cmd: "update",
-						arg: obj2plain(ops),
-					}
-					changes.ops = append(changes.ops, op)
-					return true, nil // done
-				}
-				if _, has := diff["stime"]; has {
-					stime, is_map := diff["stime"].(map[string]interface{})
-					if !is_map {
-						log.Fatalln("momyre mongo log u: $v=2, diff.stime is not map")
-						return true, nil // skip
-					}
-					ops, is_map := stime["u"].(map[string]interface{})
-					if !is_map {
-						log.Fatalln("momyre mongo log u: $v=2, diff.stime.u is not map")
-						return true, nil // skip
-					}
-					ops["_id"] = id_obj
-					table := ch.Ns
-					if strings.HasPrefix(table, mdb.dbname+".") {
-						n := len(mdb.dbname) + 1
-						table = table[n:len(table)]
-					}
-					ops["$ns"] = table
-					ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
-					op := Op{
-						cmd: "update",
-						arg: obj2plain(ops),
-					}
-					changes.ops = append(changes.ops, op)
-					return true, nil // done
-				}
+				return true, nil // done
 			} else {
 				log.Fatalln("momyre mongo log u: unsupported $v", ver)
 				return true, nil // skip
 			}
-
 		}
 
 		// not supported u op
