@@ -326,7 +326,7 @@ func (mdb *MysqlDB) processTxOps(tx *sql.Tx, ops Ops) error {
 			table, _ := op.arg["$ns"].(string)
 			err := mdb.updateRow(tx, table, op.arg)
 			if err != nil {
-				return fmt.Errorf("momyre mysql update row: %+v", err)
+				return fmt.Errorf("momyre mysql update row: %+v, %+v", err, op.arg)
 			}
 
 		} else if op.cmd == "delete" {
@@ -461,6 +461,9 @@ func (mdb *MysqlDB) updateRow(
 		case primitive.ObjectID:
 			vali = val.Hex()
 		case primitive.A:
+			bytes, _ := json.Marshal(val)
+			vali = string(bytes)
+		case primitive.Binary:
 			bytes, _ := json.Marshal(val)
 			vali = string(bytes)
 		}
