@@ -207,20 +207,20 @@ func (mdb *MongoDB) handleChange(
 		if _, has := ch.O1["$v"]; has {
 			ver, is_int := ch.O1["$v"].(int32)
 			if !is_int {
-				log.Fatalln("momyre mongo log u: $v is not int32")
+				log.Fatalln("momyre mongo log u: $v is not int32", ch)
 				return true, nil // skip
 			}
 			if ver == 2 {
 				diff, is_map := ch.O1["diff"].(map[string]interface{})
 				if !is_map {
-					log.Fatalln("momyre mongo log u: $v=2, diff is not map")
+					log.Fatalln("momyre mongo log u: $v=2, diff is not map", ch)
 					return true, nil // skip
 				}
 				for diff_key, _ := range diff {
 					if diff_key == "i" {
 						ops, is_map := diff["i"].(map[string]interface{})
 						if !is_map {
-							log.Fatalln("momyre mongo log i: $v=2, diff.i is not map")
+							log.Fatalln("momyre mongo log i: $v=2, diff.i is not map", ch)
 							return true, nil // skip
 						}
 						ops["_id"] = id_obj
@@ -239,7 +239,7 @@ func (mdb *MongoDB) handleChange(
 					} else if diff_key == "u" {
 						ops, is_map := diff["u"].(map[string]interface{})
 						if !is_map {
-							log.Fatalln("momyre mongo log u: $v=2, diff.u is not map")
+							log.Fatalln("momyre mongo log u: $v=2, diff.u is not map", ch)
 							return true, nil // skip
 						}
 						ops["_id"] = id_obj
@@ -259,36 +259,63 @@ func (mdb *MongoDB) handleChange(
 						subname := diff_key[1:]
 						submap, is_map := diff[diff_key].(map[string]interface{})
 						if !is_map {
-							log.Fatalln("momyre mongo log u: $v=2, diff." + diff_key + " is not map")
+							log.Fatalln("momyre mongo log u: $v=2, diff."+diff_key+" is not map", ch)
 							return true, nil // skip
 						}
-						subops, is_map := submap["u"].(map[string]interface{})
-						if !is_map {
-							log.Fatalln("momyre mongo log u: $v=2, diff." + diff_key + ".u is not map")
-							return true, nil // skip
+						for diff_op, _ := range submap {
+							if diff_op == "u" {
+								subops, is_map := submap["u"].(map[string]interface{})
+								if !is_map {
+									log.Fatalln("momyre mongo log u: $v=2, diff."+diff_key+".u is not map", ch)
+									return true, nil // skip
+								}
+								ops := make(map[string]interface{})
+								ops[subname] = subops
+								ops["_id"] = id_obj
+								table := ch.Ns
+								if strings.HasPrefix(table, mdb.dbname+".") {
+									n := len(mdb.dbname) + 1
+									table = table[n:len(table)]
+								}
+								ops["$ns"] = table
+								ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
+								op := Op{
+									cmd: "update",
+									arg: obj2plain(ops),
+								}
+								changes.ops = append(changes.ops, op)
+							} else if diff_op == "i" {
+								subops, is_map := submap["i"].(map[string]interface{})
+								if !is_map {
+									log.Fatalln("momyre mongo log i: $v=2, diff."+diff_key+".i is not map", ch)
+									return true, nil // skip
+								}
+								ops := make(map[string]interface{})
+								ops[subname] = subops
+								ops["_id"] = id_obj
+								table := ch.Ns
+								if strings.HasPrefix(table, mdb.dbname+".") {
+									n := len(mdb.dbname) + 1
+									table = table[n:len(table)]
+								}
+								ops["$ns"] = table
+								ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
+								op := Op{
+									cmd: "update",
+									arg: obj2plain(ops),
+								}
+								changes.ops = append(changes.ops, op)
+							} else {
+								log.Fatalln("momyre mongo log i: $v=2, diff."+diff_key+"."+diff_op+" is not map", ch)
+							}
 						}
-						ops := make(map[string]interface{})
-						ops[subname] = subops
-						ops["_id"] = id_obj
-						table := ch.Ns
-						if strings.HasPrefix(table, mdb.dbname+".") {
-							n := len(mdb.dbname) + 1
-							table = table[n:len(table)]
-						}
-						ops["$ns"] = table
-						ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
-						op := Op{
-							cmd: "update",
-							arg: obj2plain(ops),
-						}
-						changes.ops = append(changes.ops, op)
 					} else {
-						log.Fatalln("momyre mongo log i: $v=2, diff." + diff_key + " unknown")
+						log.Fatalln("momyre mongo log i: $v=2, diff."+diff_key+" unknown", ch)
 					}
 				}
 				return true, nil // done
 			} else {
-				log.Fatalln("momyre mongo log u: unsupported $v", ver)
+				log.Fatalln("momyre mongo log u: unsupported $v", ver, ch)
 				return true, nil // skip
 			}
 		}
