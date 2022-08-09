@@ -62,13 +62,14 @@ func init() {
 }
 
 type Config struct {
-	Cols_mo   map[string][]string
-	Cols_my   map[string][]string
-	Tables_mo map[string]map[string]string
-	Tables_my map[string]map[string]string
-	Inp       string                   `yaml:"inp"`
-	Out       string                   `yaml:"out"`
-	TablesYml map[string]yaml.MapSlice `yaml:"tables"`
+	Cols_mo       map[string][]string
+	Cols_my       map[string][]string
+	Tables_mo     map[string]map[string]string
+	Tables_my     map[string]map[string]string
+	Tables_my_def map[string]map[string]string
+	Inp           string                   `yaml:"inp"`
+	Out           string                   `yaml:"out"`
+	TablesYml     map[string]yaml.MapSlice `yaml:"tables"`
 }
 
 var Conf Config
@@ -89,15 +90,26 @@ func Run() error {
 		Conf.Cols_my = make(map[string][]string)
 		Conf.Tables_mo = make(map[string]map[string]string)
 		Conf.Tables_my = make(map[string]map[string]string)
+		Conf.Tables_my_def = make(map[string]map[string]string)
 		for table, m := range Conf.TablesYml {
 			cols_mo := make([]string, 0)
 			cols_my := make([]string, 0)
 			Conf.Tables_mo[table] = make(map[string]string)
 			Conf.Tables_my[table] = make(map[string]string)
+			Conf.Tables_my_def[table] = make(map[string]string)
 			for _, mi := range m {
 				col := mi.Key.(string)
 				typ := mi.Value.(string)
 				if col == "_id" {
+					continue
+				}
+				if col == "defaults" {
+					defs := mi.Value.(yaml.MapSlice)
+					for _, defi := range defs {
+						def_col := defi.Key.(string)
+						def_val := defi.Value.(string)
+						Conf.Tables_my_def[table][col4sql(def_col)] = def_val
+					}
 					continue
 				}
 				cols_mo = append(cols_mo, col)
@@ -225,6 +237,38 @@ func Run() error {
 				err = tx.Commit()
 				if err != nil {
 					return err
+				}
+			}
+
+			// read all rows from mysql and check presence in mongo
+			// if not there then remove the row by from mysql by _id
+
+			id_ch := make(chan string, 100)
+
+			go mydb.scanTableIds(table, id_ch)
+
+			for {
+				idhex, opened := <-id_ch
+				if !opened {
+					break
+				}
+				has, err := modb.checkHasId(table, idhex)
+				if err != nil {
+					return err
+				}
+				if !has {
+					tx, err := mydb.client.Begin()
+					if err != nil {
+						return err
+					}
+					err = mydb.deleteRow(tx, table, idhex, tsnum)
+					if err != nil {
+						return err
+					}
+					err = tx.Commit()
+					if err != nil {
+						return err
+					}
 				}
 			}
 		}

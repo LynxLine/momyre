@@ -609,3 +609,21 @@ func (mdb *MongoDB) unpauseWrites() error {
 	}
 	return nil
 }
+
+func (mdb *MongoDB) checkHasId(table string, idhex string) (bool, error) {
+
+	ctx := context.TODO()
+	cl := mdb.client.Database(mdb.dbname).Collection(table)
+	id, err := primitive.ObjectIDFromHex(idhex)
+	if err != nil {
+		return false, err
+	}
+	q := bson.D{{"_id", id}}
+	fo := options.FindOne()
+	obj := make(map[string]interface{})
+	err = cl.FindOne(ctx, q, fo).Decode(&obj)
+	if err != nil {
+		return false, nil
+	}
+	return true, nil
+}

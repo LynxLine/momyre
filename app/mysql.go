@@ -283,7 +283,8 @@ CREATE TABLE $name (
 			}
 			lastcol = col
 		}
-		// preserve right order of columns
+		// defaults
+		// ALTER TABLE ych.txouts MODIFY COLUMN sig_sigs blob DEFAULT "[]" NULL;
 	}
 	return resync_columns, nil
 }
@@ -583,5 +584,21 @@ func (mdb *MysqlDB) updateTimestampInTx(tx *sql.Tx, tsnum uint64) error {
 	}
 	defer res.Close()
 	mdb.Timestamp = tsnum
+	return nil
+}
+
+func (mdb *MysqlDB) scanTableIds(table string, id_ch chan<- string) error {
+
+	defer close(id_ch)
+
+	res, err := mdb.client.Query("SELECT _id FROM " + table)
+	if err != nil {
+		return err
+	}
+	var id string
+	for res.Next() {
+		res.Scan(&id)
+		id_ch <- id
+	}
 	return nil
 }
