@@ -324,6 +324,27 @@ func (mdb *MongoDB) handleChange(
 									arg: obj2plain(ops),
 								}
 								changes.ops = append(changes.ops, op)
+							} else if diff_op == "d" {
+								subops, is_map := submap["d"].(map[string]interface{})
+								if !is_map {
+									log.Fatalln("momyre mongo log d: $v=2, diff."+diff_key+".d is not map", ch)
+									return true, nil // skip
+								}
+								ops := make(map[string]interface{})
+								ops[subname] = subops
+								ops["_id"] = id_obj
+								table := ch.Ns
+								if strings.HasPrefix(table, mdb.dbname+".") {
+									n := len(mdb.dbname) + 1
+									table = table[n:len(table)]
+								}
+								ops["$ns"] = table
+								ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
+								op := Op{
+									cmd: "update",
+									arg: obj2plain(ops),
+								}
+								changes.ops = append(changes.ops, op)
 							} else {
 								log.Fatalln("momyre mongo log u.diff.s{}: $v=2, diff."+diff_key+"."+diff_op+" unknown", ch)
 							}
