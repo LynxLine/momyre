@@ -358,6 +358,22 @@ func (mdb *MongoDB) handleChange(
 				log.Fatalln("momyre mongo log u: unsupported $v", ver, ch)
 				return true, nil // skip
 			}
+		} else { // O1 as whole is object of fields to replace
+			ops := ch.O1
+			ops["_id"] = id_obj
+			table := ch.Ns
+			if strings.HasPrefix(table, mdb.dbname+".") {
+				n := len(mdb.dbname) + 1
+				table = table[n:len(table)]
+			}
+			ops["$ns"] = table
+			ops["$ts"] = uint64(ch.Ts.T)<<32 + uint64(ch.Ts.I)
+			op := Op{
+				cmd: "update",
+				arg: obj2plain(ops),
+			}
+			changes.ops = append(changes.ops, op)
+			return true, nil // done
 		}
 
 		// not supported u op
