@@ -345,6 +345,8 @@ func (mdb *MongoDB) handleChange(
 									arg: obj2plain(ops),
 								}
 								changes.ops = append(changes.ops, op)
+							} else if strings.HasPrefix(diff_key, "s") {
+								// skip, no third-level
 							} else {
 								log.Fatalln("momyre mongo log u.diff.s{}: $v=2, diff."+diff_key+"."+diff_op+" unknown", ch)
 							}
