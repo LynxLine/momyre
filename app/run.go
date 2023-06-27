@@ -261,7 +261,7 @@ func Run() error {
 					if err != nil {
 						return err
 					}
-					err = mydb.deleteRow(tx, table, idhex, tsnum)
+					err = mydb.deleteRow(tx, table, idhex, 0)
 					if err != nil {
 						return err
 					}
