@@ -37,6 +37,8 @@ import (
 
 var f_force = flag.Bool("force", false,
 	"force to allow deletion of tables and columns which are not part of replication")
+var f_zerop = flag.Bool("zerop", false,
+	"zero-point: resync all tables/columns from scratch")
 
 type sflag_t struct {
 	set   bool
@@ -142,6 +144,7 @@ func Run() error {
 	log.Infoln("momyre use mongo:", u_mo.String())
 	log.Infoln("momyre use mysql:", u_my.String())
 	log.Infoln("momyre use force:", *f_force)
+	log.Infoln("momyre use zerop:", *f_zerop)
 
 	log.Infoln("momyre repl tables:", len(Conf.Tables_mo))
 	modb, err := ConnectMo(Conf.Inp, 15*time.Second)
@@ -160,6 +163,9 @@ func Run() error {
 
 	is_from_scratch := false
 	if mydb.Timestamp == 0 {
+		is_from_scratch = true
+	}
+	if *f_zerop {
 		is_from_scratch = true
 	}
 
