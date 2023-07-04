@@ -104,12 +104,18 @@ func (mdb *MongoDB) Run(
 	timestamp uint64,
 	op_ch chan<- Ops) error {
 
-	for {
-		err := mdb.readLogs(ns, timestamp, op_ch)
-		if err != nil {
-			return err
-		}
+	// for {
+	// 	err := mdb.readLogs(ns, timestamp, op_ch)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// }
+
+	err := mdb.readLogs(ns, timestamp, op_ch)
+	if err != nil {
+		return err
 	}
+	return nil
 }
 
 type OpLog struct {

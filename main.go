@@ -30,6 +30,6 @@ import (
 
 func main() {
 	if err := app.Run(); err != nil {
-		log.Fatalln("momy end error:", err.Error())
+		log.Fatalln("momyre end error:", err.Error())
 	}
 }

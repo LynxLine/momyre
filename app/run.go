@@ -326,9 +326,12 @@ func Run() error {
 	for table, _ := range Conf.Tables_mo {
 		tables = append(tables, table)
 	}
-	err = modb.Run(tables, mydb.Timestamp, op_ch)
-	if err != nil {
-		return err
+
+	for {
+		err = modb.Run(tables, mydb.Timestamp, op_ch)
+		if err != nil {
+			return err
+		}
 	}
 	log.Infoln("momyre finished")
 
