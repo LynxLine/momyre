@@ -1,4 +1,4 @@
-FROM golang:1.15.11-alpine as dev
+FROM golang:1.20.1-alpine as dev
 
 RUN apk add git tree
 
